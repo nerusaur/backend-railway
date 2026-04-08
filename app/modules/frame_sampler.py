@@ -89,8 +89,6 @@ AD_SKIP_SECONDS   = 15
 # after the ad skip, without downloading unused video data.
 MAX_DOWNLOAD_SECONDS = 63    # was 90
 
-NODE_PATH = r"C:\Program Files\nodejs\node.exe" if os.name == "nt" else "node"
-
 # ── Cookies path ───────────────────────────────────────────────────────────────
 COOKIES_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "cookies.txt")
 
@@ -127,19 +125,22 @@ def _ydl_opts(extra: dict = None, cookies_file: str = None) -> dict:
         "noprogress":         True,
         "geo_bypass":         True,
         "geo_bypass_country": "US",
+        "xff":                "US",           # explicit XFF header (newer yt-dlp)
         "extract_flat":       False,
         "retries":            3,
         "fragment_retries":   3,
-        "js_runtimes":        {"node": {"path": NODE_PATH}},
-        "remote_components":  ["ejs:github"],
         "extractor_args": {
             "youtube": {
+                # "android" is the key geo-bypass client — it uses InnerTube with
+                # softer regional enforcement than the web client.
+                # Do NOT replace with android_vr — that client only serves DASH
+                # streams and does NOT bypass geo-restrictions.
                 "player_client": ["web", "tv_embedded", "android"]
             }
         },
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         },
     }
@@ -467,21 +468,31 @@ def sample_video(video_url_or_id: str, thumbnail_url: str = "",
         print(f"[SAMPLER] Analyzing: {video_id}")
 
         # ── Step 1 & 2: Download with preemptive cookies ──────────────────────
+        # Using cookies on the FIRST attempt is critical: YouTube authenticates
+        # the session upfront and serves a wider format list (including pre-muxed
+        # streams). A no-cookie first attempt negotiates a restricted format list,
+        # and a subsequent cookie retry cannot recover the format selection.
         t0 = time.time()
         use_cookies = COOKIES_PATH if _has_cookies() else None
-        
+
         if use_cookies:
-            print("[SAMPLER] Found cookies.txt, using preemptively to bypass bot-   blocks.")
-            
+            print("[SAMPLER] Found cookies.txt, using preemptively to bypass bot-blocks.")
+
         result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=use_cookies)
         print(f"[SAMPLER] Download attempt 1: {time.time()-t0:.1f}s")
 
-        # Retry once if it failed and we somehow didn't use cookies the first time
+        # Retry without cookies only for non-geo-block failures (e.g. expired cookie).
+        # For true geo-blocks ("not available"), a cookieless retry wastes ~6s and
+        # returns the same error — skip it.
+        _reason = result.get("reason", "").lower()
+        _is_geo_block = "not available" in _reason or "region" in _reason
         if not result["ok"] and not use_cookies and _has_cookies():
             print(f"[SAMPLER] ⚠ Failed ({result['reason']}) — retrying with cookies.txt")
             t0 = time.time()
             result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=COOKIES_PATH)
             print(f"[SAMPLER] Cookie retry: {time.time()-t0:.1f}s")
+        elif not result["ok"] and _is_geo_block:
+            print(f"[SAMPLER] ✗ True geo-block — skipping cookieless retry (android client + geo_bypass already tried)")
 
         # ── Step 3: Thumbnail-only fallback ───────────────────────────────────
         if not result["ok"]:
