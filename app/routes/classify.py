@@ -10,8 +10,9 @@ from app.modules.naive_bayes import score_from_metadata_dict, score_metadata
 
 classify_bp = Blueprint("classify", __name__)
 
-DB_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "database", "childfocus.db"
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "database", "childfocus.db")
 )
 
 # ── Confidence-gated hybrid fusion config (v3) ───────────────────────────────
