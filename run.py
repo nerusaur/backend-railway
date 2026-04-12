@@ -1,9 +1,12 @@
 import os
 import sqlite3
 
-# ── Windows-only: set ffmpeg path for local dev ───────────────────────────────
+# ── ffmpeg path ────────────────────────────────────────────────────────────────
 if os.name == "nt":
     os.environ["PATH"] = r"C:\ffmpeg\bin" + os.pathsep + os.environ.get("PATH", "")
+else:
+    # Railway/Linux — ffmpeg installed via nixpacks
+    os.environ["PATH"] = "/usr/bin:/bin:/nix/var/nix/profiles/default/bin" + os.pathsep + os.environ.get("PATH", "")
 
 # ── Database setup ─────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get(
