@@ -1,6 +1,5 @@
 [phases.setup]
-aptPkgs = ["ffmpeg", "ffprobe"]
-nixPkgs = ["nodejs"]
+nixPkgs = ["nodejs", "ffmpeg"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt --break-system-packages || true"]
