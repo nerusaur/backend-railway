@@ -6,6 +6,7 @@ Protected endpoint to push fresh cookies.txt from local machine.
 
 import os
 import time
+import subprocess
 from flask import Blueprint, request, jsonify
 
 cookies_bp = Blueprint("cookies", __name__)
@@ -39,4 +40,19 @@ def cookie_status():
         "cookies_size_bytes": size,
         "last_modified":      time.strftime('%Y-%m-%d %H:%M:%S',
                               time.localtime(modified)) if modified else None
+    }), 200
+
+
+@cookies_bp.route("/debug-ffmpeg", methods=["GET"])
+def debug_ffmpeg():
+    try:
+        path = subprocess.check_output(["which", "ffmpeg"]).decode().strip()
+    except Exception as e:
+        path = f"not found: {e}"
+
+    env_path = os.environ.get("PATH", "")
+
+    return jsonify({
+        "ffmpeg_path": path,
+        "env_path":    env_path
     }), 200
