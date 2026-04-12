@@ -45,14 +45,33 @@ def cookie_status():
 
 @cookies_bp.route("/debug-ffmpeg", methods=["GET"])
 def debug_ffmpeg():
+    # Try which
     try:
-        path = subprocess.check_output(["which", "ffmpeg"]).decode().strip()
-    except Exception as e:
-        path = f"not found: {e}"
+        which = subprocess.check_output(["which", "ffmpeg"]).decode().strip()
+    except Exception:
+        which = "not found"
 
-    env_path = os.environ.get("PATH", "")
+    # Try find in nix store
+    try:
+        found = subprocess.check_output(
+            ["find", "/nix", "-name", "ffmpeg", "-type", "f"],
+            timeout=10
+        ).decode().strip()
+    except Exception as e:
+        found = f"find failed: {e}"
+
+    # Try find in /usr
+    try:
+        found_usr = subprocess.check_output(
+            ["find", "/usr", "-name", "ffmpeg", "-type", "f"],
+            timeout=10
+        ).decode().strip()
+    except Exception as e:
+        found_usr = f"find failed: {e}"
 
     return jsonify({
-        "ffmpeg_path": path,
-        "env_path":    env_path
+        "which":        which,
+        "nix_find":     found,
+        "usr_find":     found_usr,
+        "env_path":     os.environ.get("PATH", "")
     }), 200
