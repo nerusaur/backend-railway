@@ -18,10 +18,10 @@ def create_app(config=DevelopmentConfig):
     # Register blueprints
     from app.routes.classify import classify_bp
     from app.routes.metadata import metadata_bp
-    from app.routes.cookies import cookies_bp       # <-- ADD THIS
+    from app.routes.cookies import cookies_bp
 
     app.register_blueprint(classify_bp)
     app.register_blueprint(metadata_bp)
-    app.register_blueprint(cookies_bp)              # <-- ADD THIS
+    app.register_blueprint(cookies_bp)
 
     return app
