@@ -26,3 +26,10 @@ def refresh_cookies():
         f.write(data)
 
     return jsonify({"status": "cookies updated"}), 200
+@cookies_bp.route("/debug-secret", methods=["GET"])
+def debug_secret():
+    secret = os.environ.get("REFRESH_SECRET", "NOT SET")
+    return jsonify({
+        "secret_length": len(secret),
+        "secret_value": secret  # remove this line after debugging
+    }), 200
