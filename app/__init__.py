@@ -12,8 +12,20 @@ def create_app(config=DevelopmentConfig):
     app.config.from_object(config)
 
     # ── Auto-load cookies from env on startup ──────────────────────────────
-    from app.utils.cookie_manager import ensure_cookies
+    from app.utils.cookie_manager import ensure_cookies, load_cookies_from_env
     ensure_cookies()
+
+    # ── Schedule cookie refresh every 4 hours ─────────────────────────────
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=load_cookies_from_env,
+        trigger="interval",
+        hours=4,
+        id="cookie_refresh",
+        replace_existing=True
+    )
+    scheduler.start()
 
     # Register blueprints
     from app.routes.classify import classify_bp
