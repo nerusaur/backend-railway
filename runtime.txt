@@ -1,2 +1,2 @@
 python-3.13
-APScheduler
+APScheduler==3.10.4
