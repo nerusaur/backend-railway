@@ -25,6 +25,11 @@ def load_cookies_from_env() -> bool:
     if not content:
         logging.warning("[COOKIES] YOUTUBE_COOKIES env var not set or empty.")
         return False
+
+    # Ensure Netscape header is present — required by yt-dlp
+    if not content.startswith("# Netscape HTTP Cookie File"):
+        content = "# Netscape HTTP Cookie File\n" + content
+
     os.makedirs(os.path.dirname(os.path.abspath(COOKIES_PATH)), exist_ok=True)
     with open(COOKIES_PATH, "w") as f:
         f.write(content)
