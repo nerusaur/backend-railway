@@ -20,7 +20,7 @@ def create_app(config=DevelopmentConfig):
     # ── Refresh cookies every 4 hours using background thread ─────────────
     def _cookie_refresh_loop():
         while True:
-            time.sleep(4 * 60 * 60)
+            time.sleep(1* 60)
             load_cookies_from_env()
 
     thread = threading.Thread(target=_cookie_refresh_loop, daemon=True)
