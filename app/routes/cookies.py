@@ -45,43 +45,27 @@ def cookie_status():
 
 @cookies_bp.route("/debug-ffmpeg", methods=["GET"])
 def debug_ffmpeg():
-    # Try which
+    # Search entire filesystem for ffmpeg binary
     try:
-        which = subprocess.check_output(
-            ["which", "ffmpeg"], stderr=subprocess.STDOUT
+        found = subprocess.check_output(
+            ["find", "/", "-name", "ffmpeg", "-type", "f", "-not", "-path", "*/proc/*"],
+            timeout=15,
+            stderr=subprocess.DEVNULL
         ).decode().strip()
-    except Exception:
-        which = "not found"
-
-    # Check known locations directly
-    locations = [
-        "/usr/bin/ffmpeg",
-        "/usr/local/bin/ffmpeg",
-        "/bin/ffmpeg",
-        "/nix/var/nix/profiles/default/bin/ffmpeg",
-    ]
-    found_at = [p for p in locations if os.path.isfile(p)]
-
-    # Try running ffmpeg directly
-    try:
-        ver = subprocess.check_output(
-            ["ffmpeg", "-version"], stderr=subprocess.STDOUT
-        ).decode().split("\n")[0]
     except Exception as e:
-        ver = f"failed: {e}"
+        found = f"find failed: {e}"
 
-    # Check apt package status
+    # Check nix profiles specifically
     try:
-        apt = subprocess.check_output(
-            ["dpkg", "-l", "ffmpeg"], stderr=subprocess.STDOUT
-        ).decode().strip().split("\n")[-1]
+        nix_profile = subprocess.check_output(
+            ["ls", "/nix/var/nix/profiles/default/bin/"],
+            stderr=subprocess.STDOUT
+        ).decode().strip()
     except Exception as e:
-        apt = f"failed: {e}"
+        nix_profile = f"failed: {e}"
 
     return jsonify({
-        "which":       which,
-        "found_at":    found_at,
-        "version_run": ver,
-        "apt_status":  apt,
-        "env_path":    os.environ.get("PATH", "")
+        "full_search":  found,
+        "nix_profile":  nix_profile,
+        "env_path":     os.environ.get("PATH", "")
     }), 200
