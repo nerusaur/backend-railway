@@ -21,7 +21,7 @@ def create_app(config=DevelopmentConfig):
     scheduler.add_job(
         func=load_cookies_from_env,
         trigger="interval",
-        hours=4,
+        minutes=1,
         id="cookie_refresh",
         replace_existing=True
     )
