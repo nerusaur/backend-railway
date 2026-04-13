@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["gunicorn", "run:app", "--bind", "0.0.0.0:8080"]
+CMD gunicorn run:app --bind 0.0.0.0:${PORT:-8080}
