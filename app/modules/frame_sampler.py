@@ -129,12 +129,15 @@ def _ydl_opts(extra: dict = None, cookies_file: str = None) -> dict:
         "extract_flat":       False,
         "retries":            3,
         "fragment_retries":   3,
-"extractor_args": {
-    "youtube": {
-        "player_client": ["ios", "mweb", "web", "tv_embedded", "android"],
-        "skip_webpage": True,
-    }
-},
+        "extractor_args": {
+            "youtube": {
+                # "android" is the key geo-bypass client — it uses InnerTube with
+                # softer regional enforcement than the web client.
+                # Do NOT replace with android_vr — that client only serves DASH
+                # streams and does NOT bypass geo-restrictions.
+                "player_client": ["web", "tv_embedded", "android"]
+            }
+        },
         "http_headers": {
             "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
