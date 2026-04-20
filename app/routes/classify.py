@@ -21,12 +21,12 @@ DB_PATH = os.environ.get(
 # classification.  H_OVERRIDE caps any extremely slow-paced video as
 # non-Overstimulating regardless of Score_NB.
 # Validated on 30-video dataset: calibration acc=60%, held-out test acc=60%.
-BASE_ALPHA      = 0.50
-LOW_ALPHA       = 0.15
-CONF_THRESH     = 0.40
-H_OVERRIDE      = 0.07
-THRESHOLD_BLOCK = 0.28
-THRESHOLD_ALLOW = 0.18
+BASE_ALPHA      = 0.40   # NB weight when NB confidence >= CONF_THRESH
+LOW_ALPHA       = 0.15   # NB weight when NB confidence <  CONF_THRESH
+CONF_THRESH     = 0.40   # confidence boundary
+H_OVERRIDE      = 0.07   # if Score_H < this → cannot be Overstimulating
+THRESHOLD_BLOCK = 0.20   # >= Overstimulating
+THRESHOLD_ALLOW = 0.18   # <= Educational
 
 def _fuse(score_nb: float, score_h: float, nb_confidence: float) -> tuple[float, str]:
     eff_alpha   = LOW_ALPHA if nb_confidence < CONF_THRESH else BASE_ALPHA
