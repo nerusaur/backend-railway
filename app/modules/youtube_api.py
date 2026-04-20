@@ -190,3 +190,13 @@ def search_child_videos(query: str, max_results: int = 50) -> list:
     except Exception as e:
         print(f"[SEARCH] Error: {e}")
         return []
+# ── Title similarity helper ───────────────────────────────────────────────────
+def title_similarity(a: str, b: str) -> float:
+    """Case-insensitive similarity ratio between two title strings."""
+    from difflib import SequenceMatcher
+    import re
+    def clean(s):
+        s = re.sub(r'#\w+', '', s)        # strip hashtags
+        s = re.sub(r'[^\w\s]', '', s)     # strip punctuation
+        return s.lower().strip()
+    return SequenceMatcher(None, clean(a), clean(b)).ratio()
