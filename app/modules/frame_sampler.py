@@ -467,32 +467,43 @@ def sample_video(video_url_or_id: str, thumbnail_url: str = "",
         print(f"\n[SAMPLER] ══════════════════════════════════════")
         print(f"[SAMPLER] Analyzing: {video_id}")
 
-        # ── Step 1 & 2: Download with preemptive cookies ──────────────────────
-        # Using cookies on the FIRST attempt is critical: YouTube authenticates
-        # the session upfront and serves a wider format list (including pre-muxed
-        # streams). A no-cookie first attempt negotiates a restricted format list,
-        # and a subsequent cookie retry cannot recover the format selection.
-        t0 = time.time()
-        use_cookies = COOKIES_PATH if _has_cookies() else None
+        # ── Step 1: Download — cookies.txt ALWAYS used first if present ──────────
+        # cookies.txt is the primary authentication method. Using it on the FIRST
+        # attempt is critical: YouTube authenticates the session upfront and serves
+        # a wider format list (including pre-muxed streams). Skipping cookies on
+        # the first attempt negotiates a restricted format list that cannot be
+        # recovered on retry.
+        #
+        # Fallback chain:
+        #   A) cookies.txt present  → attempt 1 WITH cookies
+        #                           → if failed (expired/invalid), attempt 2 WITHOUT cookies
+        #   B) cookies.txt absent   → attempt 1 WITHOUT cookies (no retry possible)
+        t0          = time.time()
+        has_cookies = _has_cookies()
 
-        if use_cookies:
+        if has_cookies:
             print("[SAMPLER] Found cookies.txt, using preemptively to bypass bot-blocks.")
-
-        result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=use_cookies)
-        print(f"[SAMPLER] Download attempt 1: {time.time()-t0:.1f}s")
-
-        # Retry without cookies only for non-geo-block failures (e.g. expired cookie).
-        # For true geo-blocks ("not available"), a cookieless retry wastes ~6s and
-        # returns the same error — skip it.
-        _reason = result.get("reason", "").lower()
-        _is_geo_block = "not available" in _reason or "region" in _reason
-        if not result["ok"] and not use_cookies and _has_cookies():
-            print(f"[SAMPLER] ⚠ Failed ({result['reason']}) — retrying with cookies.txt")
-            t0 = time.time()
             result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=COOKIES_PATH)
-            print(f"[SAMPLER] Cookie retry: {time.time()-t0:.1f}s")
-        elif not result["ok"] and _is_geo_block:
-            print(f"[SAMPLER] ✗ True geo-block — skipping cookieless retry (android client + geo_bypass already tried)")
+            print(f"[SAMPLER] Download attempt 1: {time.time()-t0:.1f}s")
+
+            # ── Step 2: Cookie-authenticated attempt failed — retry without cookies ──
+            # Only retry for non-geo-block failures (e.g. expired/invalid cookie file).
+            # For true geo-blocks ("not available"), a cookieless retry wastes ~6s
+            # and returns the same error — skip it.
+            if not result["ok"]:
+                _reason    = result.get("reason", "").lower()
+                _is_geo    = "not available" in _reason or "region" in _reason
+                if not _is_geo:
+                    print(f"[SAMPLER] ⚠ Cookie attempt failed ({result['reason']}) — retrying without cookies")
+                    t0     = time.time()
+                    result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=None)
+                    print(f"[SAMPLER] Download attempt 2 (no cookies): {time.time()-t0:.1f}s")
+                else:
+                    print(f"[SAMPLER] ✗ Geo-block detected — skipping cookieless retry")
+        else:
+            # No cookies.txt — single attempt without authentication
+            result = fetch_video(video_id, max_duration=MAX_DOWNLOAD_SECONDS, cookies_file=None)
+            print(f"[SAMPLER] Download attempt 1: {time.time()-t0:.1f}s")
 
         # ── Step 3: Thumbnail-only fallback ───────────────────────────────────
         if not result["ok"]:
