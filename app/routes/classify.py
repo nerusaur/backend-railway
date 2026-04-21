@@ -220,10 +220,6 @@ def classify_full():
     hint_title    = data.get("hint_title", "").strip()
     hint_desc     = (data.get("hint_description") or "").strip()
     hint_tags     = data.get("hint_tags") or []
-    is_short      = bool(data.get("is_short", False))
-    # Auto-detect Shorts from URL format even if caller didn't flag it
-    if "/shorts/" in video_url:
-        is_short = True
     if hint_desc:
         print(f"[CLASSIFY_FULL] hint_description={repr(hint_desc[:120])}")
     else:
@@ -256,8 +252,7 @@ def classify_full():
 
         # ── Run full pipeline: download + heuristic + NB ──────────────────────
         sample        = sample_video(video_url, thumbnail_url=thumbnail_url,
-                                     hint_title=hint_title, is_short=is_short)
-        print(f"[ROUTE] is_short={is_short} for {video_id}")
+                                     hint_title=hint_title)
         sample_status = sample.get("status", "error")
 
         # ── Absolute fallback: video AND thumbnail both failed ────────────────
@@ -367,15 +362,9 @@ def classify_by_title():
         print(f"[TITLE_ROUTE] Rejected: {title!r}")
         return jsonify({"error": "Title too short", "status": "error"}), 400
 
-    # Detect if caller explicitly flagged this as a Short
-    is_short_hint = data.get("is_short", False)
-
-    # Build search query — only append #shorts when caller signals it's a Short
-    if is_short_hint:
-        query = f"{title} {channel} #shorts".strip() if channel else f"{title} #shorts"
-    else:
-        query = f"{title} {channel}".strip() if channel else title
-    print(f"[TITLE_ROUTE] Searching for: {query!r} (is_short_hint={is_short_hint})")
+    # Build a Shorts-specific search query using title + channel handle (if available)
+    query = f"{title} {channel} #shorts".strip() if channel else f"{title} #shorts"
+    print(f"[TITLE_ROUTE] Searching for: {query!r}")
 
     try:
         import yt_dlp
@@ -387,18 +376,11 @@ def classify_by_title():
         if not entries:
             return jsonify({"error": "No video found", "status": "error"}), 404
 
-        # Prefer a Short (duration <= 65 s). If none found and caller hinted
-        # is_short, still pick the shortest result rather than silently using
-        # the top result which could be a long video.
-        short_entries = [e for e in entries if (e.get("duration") or 999) <= 65]
-        if short_entries:
-            entry = short_entries[0]
-        elif is_short_hint:
-            # Sort by duration ascending and take the shortest available
-            entry = min(entries, key=lambda e: e.get("duration") or 999)
-            print(f"[TITLE_ROUTE] ⚠ No confirmed Short found — using shortest result")
-        else:
-            entry = entries[0]
+        # Prefer the first result that is actually a Short (duration <= 65s)
+        entry = next(
+            (e for e in entries if (e.get("duration") or 999) <= 65),
+            entries[0]  # fallback to top result if none match duration
+        )
 
         video_id  = entry.get("id", "")
         video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -447,7 +429,7 @@ def classify_by_title():
             "/classify_full", method="POST",
             json={"video_url": video_url, "thumbnail_url": thumb_url,
                   "hint_title": title, "hint_description": hint_desc,
-                  "hint_tags": hint_tags, "is_short": is_short_hint},
+                  "hint_tags": hint_tags},
         ):
             return classify_full()
 
