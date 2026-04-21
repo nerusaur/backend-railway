@@ -220,6 +220,10 @@ def classify_full():
     hint_title    = data.get("hint_title", "").strip()
     hint_desc     = (data.get("hint_description") or "").strip()
     hint_tags     = data.get("hint_tags") or []
+    is_short      = bool(data.get("is_short", False))
+    # Auto-detect Shorts from URL format even if caller didn't flag it
+    if "/shorts/" in video_url:
+        is_short = True
     if hint_desc:
         print(f"[CLASSIFY_FULL] hint_description={repr(hint_desc[:120])}")
     else:
@@ -252,7 +256,8 @@ def classify_full():
 
         # ── Run full pipeline: download + heuristic + NB ──────────────────────
         sample        = sample_video(video_url, thumbnail_url=thumbnail_url,
-                                     hint_title=hint_title)
+                                     hint_title=hint_title, is_short=is_short)
+        print(f"[ROUTE] is_short={is_short} for {video_id}")
         sample_status = sample.get("status", "error")
 
         # ── Absolute fallback: video AND thumbnail both failed ────────────────
@@ -362,136 +367,89 @@ def classify_by_title():
         print(f"[TITLE_ROUTE] Rejected: {title!r}")
         return jsonify({"error": "Title too short", "status": "error"}), 400
 
-    import re as _re
-    clean_title = _re.sub(r'#\w+', '', title).strip()
+    # Detect if caller explicitly flagged this as a Short
+    is_short_hint = data.get("is_short", False)
 
-    query = f"{title} {channel} #shorts".strip() if channel else f"{title} #shorts"
-    print(f"[TITLE_ROUTE] Searching for: {query!r}")
+    # Build search query — only append #shorts when caller signals it's a Short
+    if is_short_hint:
+        query = f"{title} {channel} #shorts".strip() if channel else f"{title} #shorts"
+    else:
+        query = f"{title} {channel}".strip() if channel else title
+    print(f"[TITLE_ROUTE] Searching for: {query!r} (is_short_hint={is_short_hint})")
 
     try:
         import yt_dlp
-        from app.modules.youtube_api import title_similarity
-
-        # Search 5 candidates instead of 3 for better coverage
         with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True,
                                 "extract_flat": "in_playlist"}) as ydl:
-            info = ydl.extract_info(f"ytsearch5:{query}", download=False)
+            info = ydl.extract_info(f"ytsearch3:{query}", download=False)
 
         entries = info.get("entries", [])
         if not entries:
             return jsonify({"error": "No video found", "status": "error"}), 404
 
-        # ── Score all candidates by title similarity ───────────────────────────
-        SIMILARITY_THRESHOLD = 0.45
-        scored = []
-        for e in entries:
-            sim      = title_similarity(clean_title, e.get("title", ""))
-            duration = e.get("duration") or 999
-            scored.append((sim, duration, e))
-            print(f"[TITLE_ROUTE] Candidate: {e.get('title','')!r} "
-                  f"id={e.get('id')} sim={sim:.2f} dur={duration}s")
-
-        # Prefer: high similarity + short duration
-        good_shorts = [(sim, dur, e) for sim, dur, e in scored
-                       if sim >= SIMILARITY_THRESHOLD and dur <= 65]
-        if good_shorts:
-            _, duration, entry = max(good_shorts, key=lambda x: x[0])
+        # Prefer a Short (duration <= 65 s). If none found and caller hinted
+        # is_short, still pick the shortest result rather than silently using
+        # the top result which could be a long video.
+        short_entries = [e for e in entries if (e.get("duration") or 999) <= 65]
+        if short_entries:
+            entry = short_entries[0]
+        elif is_short_hint:
+            # Sort by duration ascending and take the shortest available
+            entry = min(entries, key=lambda e: e.get("duration") or 999)
+            print(f"[TITLE_ROUTE] ⚠ No confirmed Short found — using shortest result")
         else:
-            # Relax duration — just pick highest similarity
-            best_sim, duration, entry = max(scored, key=lambda x: x[0])
-            if best_sim < SIMILARITY_THRESHOLD:
-                print(f"[TITLE_ROUTE] ✗ No confident match "
-                      f"(best sim={best_sim:.2f}) for {clean_title!r}")
-                return jsonify({
-                    "error":  "Could not confidently match title to a video",
-                    "hint":   "Try scanning the QR code or URL directly",
-                    "status": "error",
-                }), 404
-        # ─────────────────────────────────────────────────────────────────────
+            entry = entries[0]
 
         video_id  = entry.get("id", "")
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         thumb_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+        duration  = entry.get("duration")
 
-        print(f"[TITLE_ROUTE] Resolved: {clean_title!r} -> {video_id} "
-              f"(duration={duration}s, "
-              f"is_short={'YES' if duration and duration <= 65 else 'NO/unknown'})")
+        print(f"[TITLE_ROUTE] Resolved: {title!r} -> {video_id} (duration={duration}s, is_short={'YES' if duration and duration <= 65 else 'NO/unknown'})")
 
-        # ── Fetch full metadata ───────────────────────────────────────────────
-        hint_desc      = ""
-        hint_tags      = []
-        resolved_title = entry.get("title", "")
+        # ── Fetch full metadata for description + tags ────────────────────────
+        # extract_flat mode above intentionally skips description/tags,
+        # so we do a second targeted fetch on the resolved video URL.
+        hint_desc = ""
+        hint_tags = []
         try:
             with yt_dlp.YoutubeDL({
-                "quiet": True, "no_warnings": True, "skip_download": True,
+                "quiet":         True,
+                "no_warnings":   True,
+                "skip_download": True,
             }) as ydl_full:
                 full_info = ydl_full.extract_info(video_url, download=False)
-            hint_desc      = (full_info.get("description") or "").strip()
-            hint_tags      = full_info.get("tags") or []
-            resolved_title = full_info.get("title", resolved_title)
-            print(f"[TITLE_ROUTE] Resolved title: {resolved_title!r}")
-            print(f"[TITLE_ROUTE] description="
-                  f"{'EMPTY' if not hint_desc else repr(hint_desc[:120])}")
+            hint_desc = (full_info.get("description") or "").strip()
+            hint_tags = full_info.get("tags") or []
+            print(f"[TITLE_ROUTE] description={'EMPTY' if not hint_desc else repr(hint_desc[:120])}")
             print(f"[TITLE_ROUTE] tags={hint_tags[:5]}")
         except Exception as e:
             print(f"[TITLE_ROUTE] ✗ full metadata fetch failed: {e}")
-            hint_desc = (entry.get("description") or "").strip()
+            hint_desc = (entry.get("description") or "").strip()  # flat fallback
             hint_tags = entry.get("tags") or []
-
-        # ── Final similarity guard against the REAL resolved title ────────────
-        # The flat search title and the actual video title can differ slightly,
-        # so we re-check similarity after fetching full metadata.
-        final_sim = title_similarity(clean_title, resolved_title)
-        print(f"[TITLE_ROUTE] Final similarity: {final_sim:.2f} "
-              f"({clean_title!r} vs {resolved_title!r})")
-        if final_sim < 0.35:
-            print(f"[TITLE_ROUTE] ✗ Rejected — sim={final_sim:.2f}")
-            return jsonify({
-                "error":          "Resolved video does not match searched title",
-                "searched_title": clean_title,
-                "resolved_title": resolved_title,
-                "similarity":     round(final_sim, 3),
-                "hint":           "Try scanning the QR code or URL directly",
-                "status":         "error",
-            }), 409
         # ─────────────────────────────────────────────────────────────────────
 
         cached = _check_cache(video_id)
         if cached:
             label, final_score, last_checked = cached
             return jsonify({
-                "video_id":       video_id,
-                "resolved_title": resolved_title,
-                "searched_title": clean_title,
-                "similarity":     round(final_sim, 3),
-                "oir_label":      label,
-                "score_final":    final_score,
-                "last_checked":   last_checked,
-                "cached":         True,
-                "action":         "block" if label == "Overstimulating" else "allow",
-                "status":         "success",
+                "video_id":     video_id,
+                "oir_label":    label,
+                "score_final":  final_score,
+                "last_checked": last_checked,
+                "cached":       True,
+                "action":       "block" if label == "Overstimulating" else "allow",
+                "status":       "success",
             }), 200
 
         from flask import current_app
         with current_app.test_request_context(
             "/classify_full", method="POST",
-            json={"video_url":        video_url,
-                  "thumbnail_url":    thumb_url,
-                  "hint_title":       title,
-                  "hint_description": hint_desc,
-                  "hint_tags":        hint_tags},
+            json={"video_url": video_url, "thumbnail_url": thumb_url,
+                  "hint_title": title, "hint_description": hint_desc,
+                  "hint_tags": hint_tags, "is_short": is_short or is_short_hint},
         ):
-            resp = classify_full()
-
-        # Inject resolution info into response so frontend can display it
-        try:
-            resp_data = resp.get_json()
-            resp_data["resolved_title"] = resolved_title
-            resp_data["searched_title"] = clean_title
-            resp_data["similarity"]     = round(final_sim, 3)
-            return jsonify(resp_data), 200
-        except Exception:
-            return resp
+            return classify_full()
 
     except Exception as e:
         print(f"[TITLE_ROUTE] Error: {e}")
