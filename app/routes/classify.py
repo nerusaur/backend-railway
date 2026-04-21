@@ -447,7 +447,7 @@ def classify_by_title():
             "/classify_full", method="POST",
             json={"video_url": video_url, "thumbnail_url": thumb_url,
                   "hint_title": title, "hint_description": hint_desc,
-                  "hint_tags": hint_tags, "is_short": is_short or is_short_hint},
+                  "hint_tags": hint_tags, "is_short": is_short_hint},
         ):
             return classify_full()
 
